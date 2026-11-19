@@ -9,7 +9,7 @@ ELF := Ps5Downloadly.elf
 all: $(ELF)
 
 $(ELF): main.c
-> $(CC) -Wall -O2 main.c -o $@
+> $(CC) -Wall -O2 main.c -lSceNet -lSceSsl -lSceHttp2 -o $@
 
 clean:
 > rm -f $(ELF)
