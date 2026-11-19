@@ -1,0 +1,45 @@
+name: Build PS5 FFPKG & ELF
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Clang & Dependencies for PS5 SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y makefs bmake clang lld llvm curl git
+
+      - name: Build PS5 ELF using ps5-payload-dev Container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/ps5-payload-dev/sdk:latest
+          options: -v ${{ github.workspace }}:/workspace -w /workspace
+          run: |
+            make all
+
+      - name: Create UFS2 PPSA99188.ffpkg for ShadowMountPlus
+        run: |
+          # Generate UFS2 image using FreeBSD makefs
+          makefs -t ffs -o version=2,bsize=65536,fsize=65536,minfree=0 dist/PPSA99188.ffpkg dist/PPSA99188
+          sha256sum dist/PPSA99188.ffpkg > dist/PPSA99188.ffpkg.sha256
+          ls -lh dist/
+
+      - name: Upload ShadowMountPlus FFPKG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PPSA99188-ShadowMountPlus-FFPKG
+          path: |
+            dist/PPSA99188.ffpkg
+            dist/PPSA99188.ffpkg.sha256
+            dist/PPSA99188/
+            dist/Ps5Downloadly.elf

@@ -1,0 +1,11 @@
+# Build & packaging artifacts
+build/
+dist/
+*.elf
+*.ffpkg
+*.sha256
+
+# Python cache & temporary download testing folders
+__pycache__/
+*.pyc
+data/
