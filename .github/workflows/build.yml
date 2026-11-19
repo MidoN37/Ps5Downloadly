@@ -3,6 +3,8 @@ name: Build PS5 FFPKG & ELF
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -10,6 +12,9 @@ on:
 jobs:
   build-ps5:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,4 +60,22 @@ jobs:
             dist/PPSA99188.ffpkg
             dist/PPSA99188.ffpkg.sha256
             dist/PPSA99188/
+            dist/Ps5Downloadly.elf
+
+      - name: Publish Official GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: "Ps5Downloadly ${{ github.ref_name }}"
+          body: |
+            ## 🚀 Ps5Downloadly ${{ github.ref_name }}
+            Native high-speed direct download manager for jailbroken PS5 consoles running **kstuff** and **ShadowMountPlus**.
+
+            ### 📦 Installation
+            1. Download **`PPSA99188.ffpkg`** below.
+            2. Copy `PPSA99188.ffpkg` to `/data/homebrew/` on your PS5 (via FTP or USB).
+            3. The app will appear in your **Games** row on the PS5 home screen!
+          files: |
+            dist/PPSA99188.ffpkg
+            dist/PPSA99188.ffpkg.sha256
             dist/Ps5Downloadly.elf
