@@ -14,10 +14,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install System Build Tools & makefs
+      - name: Install System Build Tools (Clang 18 & makefs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y makefs bmake clang lld llvm curl git unzip
+          sudo apt-get install -y clang-18 lld-18 makefs bmake curl git unzip
 
       - name: Setup Official PS5 Payload SDK
         run: |
@@ -26,13 +26,13 @@ jobs:
           sudo chmod -R +x /opt/ps5-payload-sdk/bin
 
       - name: Compile PS5 ELF & App Directory
-        env:
-          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
-          LLVM_CONFIG: /usr/bin/llvm-config
+        shell: bash
         run: |
+          source /opt/ps5-payload-sdk/toolchain/prospero.sh
           make all
 
       - name: Create ShadowMountPlus UFS2 PPSA99188.ffpkg
+        shell: bash
         run: |
           make ffpkg
           sha256sum dist/PPSA99188.ffpkg > dist/PPSA99188.ffpkg.sha256

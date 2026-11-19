@@ -8,13 +8,10 @@ OUTPUT_DIR := dist
 APP_DIR := $(OUTPUT_DIR)/$(TITLE_ID)
 FFPKG_OUTPUT := $(OUTPUT_DIR)/$(TITLE_ID).ffpkg
 
-ifdef PS5_PAYLOAD_SDK
-    include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
-endif
-
 CC ?= clang
 CFLAGS ?= -O2 -Wall
 CFLAGS += -D__PS5__ -Isrc
+
 LDFLAGS += -lSceVideoOut -lScePad -lSceUserService -lpthread
 
 SRCS := src/main.c \
