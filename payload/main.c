@@ -1,25 +1,59 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+int sceNetInit(void);
+int sceNetPoolCreate(const char *, int, int);
+int sceSslInit(size_t);
+int sceHttp2Init(int, int, size_t, int);
+int sceHttp2CreateTemplate(int, const char *, int, int);
+int sceHttp2DeleteTemplate(int);
+int sceHttp2CreateRequestWithURL(int, const char *, const char *, uint64_t);
+int sceHttp2DeleteRequest(int);
+int sceHttp2SendRequest(int, const void *, size_t);
+int sceHttp2GetStatusCode(int, int *);
+int sceHttp2ReadData(int, void *, size_t);
+int sceHttp2SetAutoRedirect(int, int);
+int sceHttp2SetConnectTimeOut(int, uint32_t);
+int sceHttp2GetResponseContentLength(int, int *, uint64_t *);
 
 #define DEST "/data/homebrew/"
 
 static char g_url[2048], g_name[256], g_msg[256] = "idle";
 static volatile long long g_total, g_done;
 static volatile int g_state; /* 0 idle, 1 downloading, 2 done, 3 error */
+static int g_ctx = -1;
 
 static void fail(const char *m) {
   snprintf(g_msg, sizeof g_msg, "%s", m);
   g_state = 3;
+}
+
+static void failc(const char *what, int code) {
+  char m[160];
+  snprintf(m, sizeof m, "%s failed (0x%x)", what, (unsigned)code);
+  fail(m);
+}
+
+static int net_init(void) {
+  if (g_ctx >= 0) return 0;
+  if (sceNetInit() < 0) return -1;
+  int pool = sceNetPoolCreate("ps5dl", 64 * 1024, 0);
+  if (pool < 0) return -2;
+  int ssl = sceSslInit(512 * 1024);
+  if (ssl < 0) return -3;
+  int ctx = sceHttp2Init(pool, ssl, 512 * 1024, 1);
+  if (ctx < 0) return -4;
+  g_ctx = ctx;
+  return 0;
 }
 
 static void url_decode(char *s, int plus) {
@@ -61,33 +95,22 @@ static void reply(int c, const char *type, const char *body) {
 
 static void *download(void *arg) {
   (void)arg;
-  char host[256], path[1536], port[8] = "80";
   const char *u = g_url;
 
-  if (strncmp(u, "http://", 7) != 0) {
-    fail("only http:// links work for now");
+  if (strncmp(u, "http://", 7) == 0)
+    u += 7;
+  else if (strncmp(u, "https://", 8) == 0)
+    u += 8;
+  else {
+    fail("link must start with http:// or https://");
     return NULL;
-  }
-  u += 7;
-  const char *slash = strchr(u, '/');
-  size_t hl = slash ? (size_t)(slash - u) : strlen(u);
-  if (hl == 0 || hl >= sizeof host) {
-    fail("bad host");
-    return NULL;
-  }
-  memcpy(host, u, hl);
-  host[hl] = 0;
-  snprintf(path, sizeof path, "%s", slash ? slash : "/");
-  char *colon = strchr(host, ':');
-  if (colon) {
-    *colon = 0;
-    snprintf(port, sizeof port, "%s", colon + 1);
   }
 
   char fname[256];
   {
-    char tmp[1536];
-    snprintf(tmp, sizeof tmp, "%s", path);
+    char tmp[2048];
+    const char *slash = strchr(u, '/');
+    snprintf(tmp, sizeof tmp, "%s", slash ? slash : "/");
     char *q = strchr(tmp, '?');
     if (q) *q = 0;
     char *b = strrchr(tmp, '/');
@@ -102,101 +125,105 @@ static void *download(void *arg) {
   }
   snprintf(g_name, sizeof g_name, "%s", fname);
 
-  struct addrinfo hints, *res;
-  memset(&hints, 0, sizeof hints);
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-  if (getaddrinfo(host, port, &hints, &res) != 0) {
-    fail("DNS lookup failed");
+  int rc = net_init();
+  if (rc < 0) {
+    failc("network init", rc);
     return NULL;
   }
-  int s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (s < 0 || connect(s, res->ai_addr, res->ai_addrlen) < 0) {
-    freeaddrinfo(res);
-    if (s >= 0) close(s);
-    fail("connect failed");
-    return NULL;
-  }
-  freeaddrinfo(res);
 
-  char req[2048];
-  int n = snprintf(req, sizeof req,
-                   "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: Ps5Downloadly\r\n"
-                   "Accept: */*\r\nConnection: close\r\n\r\n",
-                   path, host);
-  send_all(s, req, (size_t)n);
-
-  static char hdr[8192];
-  size_t have = 0;
-  char *end = NULL;
-  while (!end && have < sizeof hdr - 1) {
-    ssize_t r = recv(s, hdr + have, sizeof hdr - 1 - have, 0);
-    if (r <= 0) break;
-    have += (size_t)r;
-    hdr[have] = 0;
-    end = strstr(hdr, "\r\n\r\n");
-  }
-  if (!end) {
-    close(s);
-    fail("bad response from server");
+  int tmpl = sceHttp2CreateTemplate(g_ctx, "Ps5Downloadly/1.0", 3, 1);
+  if (tmpl < 0) {
+    failc("create template", tmpl);
     return NULL;
   }
-  int code = atoi(hdr + 9);
-  if (code != 200) {
-    char m[96];
-    snprintf(m, sizeof m, "server returned HTTP %d", code);
-    close(s);
+  sceHttp2SetAutoRedirect(tmpl, 1);
+  sceHttp2SetConnectTimeOut(tmpl, 30 * 1000 * 1000);
+
+  int req = sceHttp2CreateRequestWithURL(tmpl, "GET", g_url, 0);
+  if (req < 0) {
+    sceHttp2DeleteTemplate(tmpl);
+    failc("create request", req);
+    return NULL;
+  }
+
+  rc = sceHttp2SendRequest(req, NULL, 0);
+  if (rc < 0) {
+    sceHttp2DeleteRequest(req);
+    sceHttp2DeleteTemplate(tmpl);
+    failc("send request", rc);
+    return NULL;
+  }
+
+  int status = 0;
+  rc = sceHttp2GetStatusCode(req, &status);
+  if (rc < 0) {
+    sceHttp2DeleteRequest(req);
+    sceHttp2DeleteTemplate(tmpl);
+    failc("get status", rc);
+    return NULL;
+  }
+  if (status != 200) {
+    char m[64];
+    snprintf(m, sizeof m, "server returned HTTP %d", status);
+    sceHttp2DeleteRequest(req);
+    sceHttp2DeleteTemplate(tmpl);
     fail(m);
     return NULL;
   }
+
+  int lres = -1;
+  uint64_t len = 0;
   g_total = 0;
-  char *cl = strcasestr(hdr, "\r\nContent-Length:");
-  if (cl) g_total = atoll(cl + 17);
+  if (sceHttp2GetResponseContentLength(req, &lres, &len) >= 0 && lres == 0)
+    g_total = (long long)len;
 
   char full[512];
   snprintf(full, sizeof full, DEST "%s", fname);
   int fd = open(full, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (fd < 0) {
-    close(s);
+    sceHttp2DeleteRequest(req);
+    sceHttp2DeleteTemplate(tmpl);
     fail("cannot create file in /data/homebrew");
     return NULL;
-  }
-
-  char *body = end + 4;
-  size_t blen = have - (size_t)(body - hdr);
-  if (blen) {
-    if (write(fd, body, blen) != (ssize_t)blen) {
-      close(fd);
-      close(s);
-      fail("write error");
-      return NULL;
-    }
-    g_done += (long long)blen;
   }
 
   size_t bufsz = 256 * 1024;
   char *buf = malloc(bufsz);
   if (!buf) {
     close(fd);
-    close(s);
+    sceHttp2DeleteRequest(req);
+    sceHttp2DeleteTemplate(tmpl);
     fail("out of memory");
     return NULL;
   }
+
+  int err = 0;
   for (;;) {
-    ssize_t r = recv(s, buf, bufsz, 0);
-    if (r <= 0) break;
+    int r = sceHttp2ReadData(req, buf, bufsz);
+    if (r == 0) break;
+    if (r < 0) {
+      err = r;
+      break;
+    }
     if (write(fd, buf, (size_t)r) != r) {
-      free(buf);
-      close(fd);
-      close(s);
-      fail("write error (disk full?)");
-      return NULL;
+      err = 1;
+      break;
     }
     g_done += r;
   }
   free(buf);
   close(fd);
-  close(s);
+  sceHttp2DeleteRequest(req);
+  sceHttp2DeleteTemplate(tmpl);
+
+  if (err == 1) {
+    fail("write error (disk full?)");
+    return NULL;
+  }
+  if (err < 0) {
+    failc("read", err);
+    return NULL;
+  }
   if (g_total && g_done != g_total) {
     fail("download incomplete");
     return NULL;
@@ -210,7 +237,7 @@ static const char *PAGE =
     "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
     "<title>Ps5Downloadly</title>"
     "<body style='font-family:sans-serif;margin:16px'><h2>Ps5Downloadly</h2>"
-    "<input id=u placeholder='http link' style='width:100%;font-size:16px;padding:8px'>"
+    "<input id=u placeholder='paste link' style='width:100%;font-size:16px;padding:8px'>"
     "<button onclick='go()' style='font-size:18px;padding:10px;margin-top:8px'>Start download</button>"
     "<pre id=s></pre>"
     "<script>"
