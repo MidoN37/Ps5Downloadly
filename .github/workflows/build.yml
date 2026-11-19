@@ -34,7 +34,14 @@ jobs:
         run: |
           export PATH="/usr/lib/llvm-18/bin:${PATH}"
           source /opt/ps5-payload-sdk/toolchain/prospero.sh
-          make all
+          make all 2>&1 | tee compile.log
+
+      - name: Upload Compile Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-log
+          path: compile.log
 
       - name: Create ShadowMountPlus UFS2 PPSA99188.ffpkg
         shell: bash
