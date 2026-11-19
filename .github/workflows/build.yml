@@ -1,81 +1,25 @@
-name: Build PS5 FFPKG & ELF
-
+name: Build payload
 on:
   push:
-    branches: [ main, master ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main, master ]
+    branches: [main]
   workflow_dispatch:
-
 jobs:
-  build-ps5:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install System Build Tools (Clang 18 & makefs)
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y clang lld make unzip curl
+      - name: Get SDK
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 makefs bmake curl git unzip
-          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
-          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
-          sudo ln -sf /usr/bin/ld.lld-18 /usr/bin/ld.lld
-          sudo ln -sf /usr/bin/llvm-config-18 /usr/bin/llvm-config
-
-      - name: Setup Official PS5 Payload SDK
-        run: |
-          curl -sL https://github.com/ps5-payload-dev/sdk/releases/download/v0.45/ps5-payload-sdk.zip -o ps5-sdk.zip
-          sudo unzip -q ps5-sdk.zip -d /opt
+          curl -fsSL https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip -o sdk.zip
+          sudo unzip -q sdk.zip -d /opt
           sudo chmod -R +x /opt/ps5-payload-sdk/bin
-
-      - name: Compile PS5 ELF & App Directory
-        shell: bash
+      - name: Build
         run: |
-          export PATH="/usr/lib/llvm-18/bin:${PATH}"
-          source /opt/ps5-payload-sdk/toolchain/prospero.sh
-          if ! make all 2>&1 | tee compile.log; then
-            ERR_MSG=$(cat compile.log | tr '\n' ' ')
-            echo "::error title=Compiler Error::$ERR_MSG"
-            exit 1
-          fi
-
-      - name: Create ShadowMountPlus UFS2 PPSA99188.ffpkg
-        shell: bash
-        run: |
-          make ffpkg
-          sha256sum dist/PPSA99188.ffpkg > dist/PPSA99188.ffpkg.sha256
-          ls -lh dist/
-
-      - name: Upload ShadowMountPlus FFPKG Artifact
-        uses: actions/upload-artifact@v4
+          export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
+          make -C payload
+      - uses: actions/upload-artifact@v4
         with:
-          name: PPSA99188-ShadowMountPlus-FFPKG
-          path: |
-            dist/PPSA99188.ffpkg
-            dist/PPSA99188.ffpkg.sha256
-            dist/PPSA99188/
-            dist/Ps5Downloadly.elf
-
-      - name: Publish Official GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          name: "Ps5Downloadly ${{ github.ref_name }}"
-          body: |
-            ## 🚀 Ps5Downloadly ${{ github.ref_name }}
-            Native high-speed direct download manager for jailbroken PS5 consoles running **kstuff** and **ShadowMountPlus**.
-
-            ### 📦 Installation
-            1. Download **`PPSA99188.ffpkg`** below.
-            2. Copy `PPSA99188.ffpkg` to `/data/homebrew/` on your PS5 (via FTP or USB).
-            3. The app will appear in your **Games** row on the PS5 home screen!
-          files: |
-            dist/PPSA99188.ffpkg
-            dist/PPSA99188.ffpkg.sha256
-            dist/Ps5Downloadly.elf
+          name: Ps5Downloadly-elf
+          path: payload/Ps5Downloadly.elf
