@@ -15,6 +15,7 @@ endif
 CC ?= clang
 CFLAGS ?= -O2 -Wall
 CFLAGS += -D__PS5__ -Isrc
+LDFLAGS += -lSceVideoOut -lScePad -lSceUserService -lpthread
 
 SRCS := src/main.c \
         src/core/tinyurl.c \

@@ -2,13 +2,40 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <stdint.h>
 
 #ifdef __PS5__
-/* Native PS5 system headers from ps5-payload-sdk */
-#include <kernel.h>
-#include <video_out.h>
-#include <pad.h>
-#include <user_service.h>
+#include <ps5/kernel.h>
+
+typedef int32_t SceUserServiceUserId;
+
+typedef struct {
+    uint8_t x;
+    uint8_t y;
+} ScePadAnalogStick;
+
+typedef struct {
+    uint32_t buttons;
+    ScePadAnalogStick leftStick;
+    ScePadAnalogStick rightStick;
+    uint8_t analogButtons[8];
+    uint8_t padding[16];
+} ScePadData;
+
+#define SCE_PAD_PORT_TYPE_STANDARD 0
+#define SCE_VIDEO_OUT_BUS_TYPE_MAIN 0
+#define SCE_VIDEO_OUT_FLIP_MODE_VSYNC 1
+
+int sceUserServiceInitialize(void *params);
+int sceUserServiceGetInitialUser(SceUserServiceUserId *userId);
+int scePadInit(void);
+int scePadOpen(SceUserServiceUserId userId, int type, int index, void *param);
+int scePadReadState(int handle, ScePadData *data);
+int scePadClose(int handle);
+int sceVideoOutOpen(int userId, int type, int index, void *param);
+int sceVideoOutSubmitFlip(int handle, int bufferIndex, int flipMode, int64_t flipArg);
+int sceVideoOutClose(int handle);
 
 static int g_video_handle = -1;
 static int g_pad_handle = -1;
@@ -16,18 +43,16 @@ static uint32_t *g_fb_ptr = NULL;
 static uint32_t g_prev_buttons = 0;
 
 int ps5_hal_init(ps5_ui_context_t *ui_ctx) {
-    int ret;
-    
     // 1. Initialize User Service
-    ret = sceUserServiceInitialize(NULL);
-    SceUserServiceUserId userId;
+    sceUserServiceInitialize(NULL);
+    SceUserServiceUserId userId = 0;
     sceUserServiceGetInitialUser(&userId);
 
     // 2. Initialize DualSense Pad
     scePadInit();
     g_pad_handle = scePadOpen(userId, SCE_PAD_PORT_TYPE_STANDARD, 0, NULL);
     if (g_pad_handle < 0) {
-        printf("[PS5-HAL] Error: failed to open DualSense pad.\n");
+        printf("[PS5-HAL] Notice: DualSense pad handle: %d\n", g_pad_handle);
     }
 
     // 3. Setup Video Out Direct Framebuffer
@@ -87,7 +112,6 @@ void ps5_hal_cleanup(void) {
 #else
 /* Host / Simulator fallback */
 static uint32_t *g_mock_fb = NULL;
-static uint32_t g_prev_buttons = 0;
 
 int ps5_hal_init(ps5_ui_context_t *ui_ctx) {
     size_t fb_size = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t);
@@ -105,7 +129,6 @@ int ps5_hal_poll_input(ps5_pad_state_t *out_state) {
 }
 
 void ps5_hal_flip_framebuffer(void) {
-    /* No-op on mock */
 }
 
 void ps5_hal_cleanup(void) {

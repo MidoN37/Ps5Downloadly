@@ -28,6 +28,7 @@ jobs:
       - name: Compile PS5 ELF & App Directory
         env:
           PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+          LLVM_CONFIG: /usr/bin/llvm-config
         run: |
           make all
 
