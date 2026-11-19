@@ -87,11 +87,8 @@ int tinyurl_resolve(const char *short_code, tinyurl_info_t *out_info) {
     out_info->content_length = -1;
     out_info->is_resumable = 1; /* Default to checking on download */
 
-    /*
-     * Note: In the PS5 native environment, network requests are handled
-     * via POSIX sockets (or libSceNet / libSceSsl). In host simulation,
-     * standard socket / HTTP libraries handle redirection.
-     * The resolved direct link URL is populated after following HTTP 301/302 redirects.
-     */
+    extract_filename_from_url(out_info->full_request_url, out_info->detected_filename, sizeof(out_info->detected_filename));
+    parse_content_disposition("", out_info->detected_filename, sizeof(out_info->detected_filename));
+
     return 0;
 }

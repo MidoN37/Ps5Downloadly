@@ -178,11 +178,11 @@ void ui_render(ps5_ui_context_t *ctx) {
     /* 4. Save Directory Selector Card */
     int dir_card_x = 1240, dir_card_w = ctx->width - 120 - 1180;
     draw_rect(ctx, dir_card_x, card_y, dir_card_w, 110, COLOR_PANEL);
-    draw_rect_outline(ctx, dir_card_x, card_y, dir_card_w, 2, COLOR_PANEL_BORDER);
+    draw_rect_outline(ctx, dir_card_x, card_y, dir_card_w, 110, 2, COLOR_PANEL_BORDER);
     draw_string(ctx, dir_card_x + 20, card_y + 15, "SAVE LOCATION (Press △ to Change)", 1, COLOR_TEXT_MUTED);
     
     draw_rect(ctx, dir_card_x + 20, card_y + 45, dir_card_w - 40, 42, 0xFF0D141F);
-    draw_rect_outline(ctx, dir_card_x + 20, card_y + 45, dir_card_w - 40, 1, COLOR_ACCENT_BLUE);
+    draw_rect_outline(ctx, dir_card_x + 20, card_y + 45, dir_card_w - 40, 42, 1, COLOR_ACCENT_BLUE);
     draw_string(ctx, dir_card_x + 35, card_y + 57, ctx->download_task.save_directory, 1, COLOR_TEXT_WHITE);
 
     /* 5. Virtual Keyboard Grid */
@@ -248,7 +248,7 @@ void ui_render(ps5_ui_context_t *ctx) {
     /* 7. Bottom Controller Legend Bar */
     int foot_y = ctx->height - 70;
     draw_rect(ctx, 0, foot_y, ctx->width, 70, 0xFF080B10);
-    draw_rect_outline(ctx, 0, foot_y, ctx->width, 1, COLOR_PANEL_BORDER);
+    draw_rect_outline(ctx, 0, foot_y, ctx->width, 70, 1, COLOR_PANEL_BORDER);
     
     draw_string(ctx, 90, foot_y + 25, "(X) Enter Key", 1, COLOR_ACCENT_CYAN);
     draw_string(ctx, 300, foot_y + 25, "(Square) Backspace / Pause", 1, COLOR_TEXT_WHITE);
@@ -276,7 +276,7 @@ void ui_render(ps5_ui_context_t *ctx) {
             int is_sel = (i == ctx->selected_path_index);
             
             draw_rect(ctx, modal_x + 40, item_y, modal_w - 80, 42, is_sel ? COLOR_FOCUS : 0xFF0E1521);
-            draw_rect_outline(ctx, modal_x + 40, item_y, modal_w - 80, 1, is_sel ? COLOR_ACCENT_CYAN : COLOR_PANEL_BORDER);
+            draw_rect_outline(ctx, modal_x + 40, item_y, modal_w - 80, 42, 1, is_sel ? COLOR_ACCENT_CYAN : COLOR_PANEL_BORDER);
             
             char line[128];
             snprintf(line, sizeof(line), "%s %s %s", 
