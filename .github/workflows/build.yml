@@ -8,29 +8,32 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-ps5:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Clang & Dependencies for PS5 SDK
+      - name: Install System Build Tools & makefs
         run: |
           sudo apt-get update
-          sudo apt-get install -y makefs bmake clang lld llvm curl git
+          sudo apt-get install -y makefs bmake clang lld llvm curl git unzip
 
-      - name: Build PS5 ELF using ps5-payload-dev Container
-        uses: addnab/docker-run-action@v3
-        with:
-          image: ghcr.io/ps5-payload-dev/sdk:latest
-          options: -v ${{ github.workspace }}:/workspace -w /workspace
-          run: |
-            make all
-
-      - name: Create UFS2 PPSA99188.ffpkg for ShadowMountPlus
+      - name: Setup Official PS5 Payload SDK
         run: |
-          # Generate UFS2 image using FreeBSD makefs
-          makefs -t ffs -o version=2,bsize=65536,fsize=65536,minfree=0 dist/PPSA99188.ffpkg dist/PPSA99188
+          curl -sL https://github.com/ps5-payload-dev/sdk/releases/download/v0.45/ps5-payload-sdk.zip -o ps5-sdk.zip
+          sudo unzip -q ps5-sdk.zip -d /opt
+          sudo chmod -R +x /opt/ps5-payload-sdk/bin
+
+      - name: Compile PS5 ELF & App Directory
+        env:
+          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+        run: |
+          make all
+
+      - name: Create ShadowMountPlus UFS2 PPSA99188.ffpkg
+        run: |
+          make ffpkg
           sha256sum dist/PPSA99188.ffpkg > dist/PPSA99188.ffpkg.sha256
           ls -lh dist/
 

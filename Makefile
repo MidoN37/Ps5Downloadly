@@ -8,7 +8,14 @@ OUTPUT_DIR := dist
 APP_DIR := $(OUTPUT_DIR)/$(TITLE_ID)
 FFPKG_OUTPUT := $(OUTPUT_DIR)/$(TITLE_ID).ffpkg
 
-# Source files
+ifdef PS5_PAYLOAD_SDK
+    include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
+endif
+
+CC ?= clang
+CFLAGS ?= -O2 -Wall
+CFLAGS += -D__PS5__ -Isrc
+
 SRCS := src/main.c \
         src/core/tinyurl.c \
         src/core/downloader.c \
@@ -17,22 +24,6 @@ SRCS := src/main.c \
         src/platform/ps5_hal.c
 
 OBJS := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(SRCS))
-
-# SDK setup
-ifndef PS5_PAYLOAD_SDK
-    PS5_PAYLOAD_SDK := /opt/ps5-payload-sdk
-endif
-
-CC := $(PS5_PAYLOAD_SDK)/bin/prospero-clang
-CFLAGS := -O2 -Wall -D__PS5__ -Isrc -I$(PS5_PAYLOAD_SDK)/include
-LDFLAGS := -L$(PS5_PAYLOAD_SDK)/lib \
-           -lkernel \
-           -lSceVideoOut \
-           -lScePad \
-           -lSceUserService \
-           -lSceNet \
-           -lSceSsl \
-           -lpthread
 
 all: $(OUTPUT_DIR)/$(TARGET_ELF) app_dir
 
@@ -45,7 +36,7 @@ $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Prepares the standard ShadowMountPlus app folder
+# Prepares the ShadowMountPlus app directory
 app_dir: $(OUTPUT_DIR)/$(TARGET_ELF)
 	@echo "[*] Preparing ShadowMountPlus app directory ($(TITLE_ID))..."
 	@mkdir -p $(APP_DIR)/sce_sys
@@ -54,14 +45,14 @@ app_dir: $(OUTPUT_DIR)/$(TARGET_ELF)
 	@if [ -f package/icon0.png ]; then cp package/icon0.png $(APP_DIR)/sce_sys/icon0.png; fi
 	@echo "[+] Ready app directory created at: $(APP_DIR)"
 
-# Creates UFS2 .ffpkg for ShadowMountPlus auto-mounter
+# Generates UFS2 .ffpkg container using makefs
 ffpkg: app_dir
 	@echo "[*] Packaging $(TITLE_ID).ffpkg using makefs (UFS2)..."
 	@if command -v makefs >/dev/null 2>&1; then \
 		makefs -t ffs -o version=2,bsize=65536,fsize=65536,minfree=0 $(FFPKG_OUTPUT) $(APP_DIR); \
 		echo "[+] Generated $(FFPKG_OUTPUT) successfully!"; \
 	else \
-		echo "[-] Notice: 'makefs' is not installed locally. Use GitHub Actions or UFS2Tool on Windows to produce the .ffpkg container."; \
+		echo "[-] Notice: makefs not found on host. Use CI to produce the .ffpkg container."; \
 	fi
 
 clean:
