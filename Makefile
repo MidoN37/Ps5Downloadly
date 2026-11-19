@@ -39,7 +39,7 @@ app_dir: $(OUTPUT_DIR)/$(TARGET_ELF)
 ffpkg: app_dir
 	@echo "[*] Packaging $(TITLE_ID).ffpkg using makefs (UFS2)..."
 	@if command -v makefs >/dev/null 2>&1; then \
-		makefs -t ffs -o version=2,bsize=65536,fsize=65536,minfree=0 $(FFPKG_OUTPUT) $(APP_DIR); \
+		makefs -t ffs -B little -o version=2,bsize=32768,fsize=4096,minfree=0 $(FFPKG_OUTPUT) $(APP_DIR); \
 		echo "[+] Generated $(FFPKG_OUTPUT) successfully!"; \
 	else \
 		echo "[-] Notice: makefs not found on host. Use CI to produce the .ffpkg container."; \
