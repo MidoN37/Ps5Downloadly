@@ -3,7 +3,6 @@
 
 TITLE_ID := PPSA99188
 TARGET_ELF := Ps5Downloadly.elf
-BUILD_DIR := build
 OUTPUT_DIR := dist
 APP_DIR := $(OUTPUT_DIR)/$(TITLE_ID)
 FFPKG_OUTPUT := $(OUTPUT_DIR)/$(TITLE_ID).ffpkg
@@ -11,7 +10,6 @@ FFPKG_OUTPUT := $(OUTPUT_DIR)/$(TITLE_ID).ffpkg
 CC ?= clang
 CFLAGS ?= -O2 -Wall
 CFLAGS += -D__PS5__ -Isrc
-
 LDFLAGS += -lSceVideoOut -lScePad -lSceUserService -lpthread
 
 SRCS := src/main.c \
@@ -21,18 +19,12 @@ SRCS := src/main.c \
         src/ui/ui.c \
         src/platform/ps5_hal.c
 
-OBJS := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(SRCS))
-
 all: $(OUTPUT_DIR)/$(TARGET_ELF) app_dir
 
-$(OUTPUT_DIR)/$(TARGET_ELF): $(OBJS)
+$(OUTPUT_DIR)/$(TARGET_ELF): $(SRCS)
 	@mkdir -p $(OUTPUT_DIR)
-	$(CC) $(OBJS) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $(SRCS) $(LDFLAGS) -o $@
 	@echo "[+] PS5 ELF successfully built: $@"
-
-$(BUILD_DIR)/%.o: src/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
 
 # Prepares the ShadowMountPlus app directory
 app_dir: $(OUTPUT_DIR)/$(TARGET_ELF)
@@ -54,6 +46,6 @@ ffpkg: app_dir
 	fi
 
 clean:
-	rm -rf $(BUILD_DIR) $(OUTPUT_DIR)
+	rm -rf $(OUTPUT_DIR)
 
 .PHONY: all clean app_dir ffpkg
