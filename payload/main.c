@@ -24,8 +24,20 @@ int sceHttp2ReadData(int, void *, size_t);
 int sceHttp2SetAutoRedirect(int, int);
 int sceHttp2SetConnectTimeOut(int, uint32_t);
 int sceHttp2GetResponseContentLength(int, int *, uint64_t *);
+int sceHttp2SetSslCallback(int, int (*)(int, unsigned int, void *const[], int, void *), void *);
+
+static volatile unsigned int g_ssl_err = 0xffffffffu;
+
+static int ssl_cb(int ssl_id, unsigned int verify_err, void *const certs[],
+                  int cert_num, void *arg) {
+  (void)ssl_id; (void)certs; (void)cert_num; (void)arg;
+  g_ssl_err = verify_err;
+  return 0; /* accept certificate */
+}
 
 #define DEST "/data/homebrew/"
+#define PORT 8086
+#define BUILD "r3 ssl-callback, replaces old copy"
 
 static char g_url[2048], g_name[256], g_msg[256] = "idle";
 static volatile long long g_total, g_done;
@@ -138,6 +150,8 @@ static void *download(void *arg) {
   }
   sceHttp2SetAutoRedirect(tmpl, 1);
   sceHttp2SetConnectTimeOut(tmpl, 30 * 1000 * 1000);
+  g_ssl_err = 0xffffffffu;
+  sceHttp2SetSslCallback(tmpl, ssl_cb, NULL);
 
   int req = sceHttp2CreateRequestWithURL(tmpl, "GET", g_url, 0);
   if (req < 0) {
@@ -150,7 +164,12 @@ static void *download(void *arg) {
   if (rc < 0) {
     sceHttp2DeleteRequest(req);
     sceHttp2DeleteTemplate(tmpl);
-    failc("send request", rc);
+    {
+      char m[200];
+      snprintf(m, sizeof m, "send request failed (0x%x) ssl verify: 0x%x",
+               (unsigned)rc, g_ssl_err);
+      fail(m);
+    }
     return NULL;
   }
 
@@ -246,18 +265,49 @@ static const char *PAGE =
     "setInterval(tick,1000);tick();"
     "</script>";
 
-int main(void) {
+static int open_server(void) {
   int srv = socket(AF_INET, SOCK_STREAM, 0);
+  if (srv < 0) return -1;
   int one = 1;
   setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-
   struct sockaddr_in a;
   memset(&a, 0, sizeof(a));
   a.sin_family = AF_INET;
   a.sin_addr.s_addr = htonl(INADDR_ANY);
-  a.sin_port = htons(8085);
-  if (bind(srv, (struct sockaddr *)&a, sizeof(a)) < 0) return 1;
-  if (listen(srv, 8) < 0) return 1;
+  a.sin_port = htons(PORT);
+  if (bind(srv, (struct sockaddr *)&a, sizeof(a)) < 0 ||
+      listen(srv, 8) < 0) {
+    close(srv);
+    return -1;
+  }
+  return srv;
+}
+
+static void kill_old(void) {
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s < 0) return;
+  struct sockaddr_in a;
+  memset(&a, 0, sizeof(a));
+  a.sin_family = AF_INET;
+  a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  a.sin_port = htons(PORT);
+  if (connect(s, (struct sockaddr *)&a, sizeof(a)) == 0) {
+    const char *q = "GET /quit HTTP/1.0\r\n\r\n";
+    write(s, q, strlen(q));
+    char b[64];
+    read(s, b, sizeof b);
+  }
+  close(s);
+}
+
+int main(void) {
+  int srv = open_server();
+  if (srv < 0) {
+    kill_old();
+    sleep(2);
+    srv = open_server();
+  }
+  if (srv < 0) return 1;
 
   for (;;) {
     int c = accept(srv, NULL, NULL);
@@ -292,6 +342,11 @@ int main(void) {
         if (pthread_create(&t, &at, download, NULL) != 0) fail("thread error");
         reply(c, "text/plain", "ok");
       }
+    } else if (strncmp(buf, "GET /quit", 9) == 0) {
+      reply(c, "text/plain", "bye");
+      close(c);
+      close(srv);
+      _exit(0);
     } else if (strncmp(buf, "GET /status", 11) == 0) {
       static const char *names[] = {"idle", "downloading", "done", "error"};
       char out[768];
@@ -299,7 +354,7 @@ int main(void) {
       double t = (double)g_total / 1048576.0;
       int pct = g_total ? (int)(g_done * 100 / g_total) : 0;
       snprintf(out, sizeof out,
-               "state: %s\nfile: %s\n%.1f / %.1f MB (%d%%)\n%s\n",
+               "build: " BUILD "\nstate: %s\nfile: %s\n%.1f / %.1f MB (%d%%)\n%s\n",
                names[g_state], g_name, d, t, pct, g_msg);
       reply(c, "text/plain", out);
     } else {
